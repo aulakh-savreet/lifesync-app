@@ -1,49 +1,31 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { Activity, TrendingUp, Moon, Coffee, Target, Calendar, ChevronRight, Plus, Brain, Zap } from 'lucide-react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { format } from 'date-fns'
 
 export default function Home() {
-  const [entries, setEntries] = useState([])
-  const [showCheckIn, setShowCheckIn] = useState(false)
-  const [insights, setInsights] = useState([])
-  const [todayEntry, setTodayEntry] = useState(null)
-
-  // Load data from localStorage on mount
-  useEffect(() => {
+  const [entries, setEntries] = useState(() => {
+    if (typeof window === 'undefined') return []
     const savedEntries = localStorage.getItem('lifesync-entries')
-    if (savedEntries) {
-      setEntries(JSON.parse(savedEntries))
-    }
-    
-    // Check if user already checked in today
-    const today = format(new Date(), 'yyyy-MM-dd')
-    const saved = JSON.parse(localStorage.getItem('lifesync-entries') || '[]')
-    const todayData = saved.find(e => e.date === today)
-    if (todayData) {
-      setTodayEntry(todayData)
-    }
+    return savedEntries ? sortEntries(JSON.parse(savedEntries)) : []
+  })
+  const [showCheckIn, setShowCheckIn] = useState(false)
 
-    // Generate insights
-    generateInsights()
-  }, [])
-
-  const generateInsights = () => {
-    const saved = JSON.parse(localStorage.getItem('lifesync-entries') || '[]')
-    if (saved.length < 3) return
+  const generateInsights = (data) => {
+    if (!data || data.length < 3) return []
 
     const newInsights = []
-    
+
     // Calculate averages
-    const avgPerformance = saved.reduce((acc, e) => acc + e.performance, 0) / saved.length
-    const avgSleep = saved.reduce((acc, e) => acc + e.sleep, 0) / saved.length
-    
+    const avgPerformance = data.reduce((acc, e) => acc + e.performance, 0) / data.length
+    const avgSleep = data.reduce((acc, e) => acc + e.sleep, 0) / data.length
+
     // Find patterns
-    const goodDays = saved.filter(e => e.performance >= 7)
-    const badDays = saved.filter(e => e.performance <= 4)
-    
+    const goodDays = data.filter(e => e.performance >= 7)
+    const badDays = data.filter(e => e.performance <= 4)
+
     if (goodDays.length > 0) {
       const avgGoodSleep = goodDays.reduce((acc, e) => acc + e.sleep, 0) / goodDays.length
       if (avgGoodSleep > avgSleep) {
@@ -69,10 +51,10 @@ export default function Home() {
     }
 
     // Check recent trend
-    if (saved.length >= 7) {
-      const recent = saved.slice(-7)
+    if (data.length >= 7) {
+      const recent = data.slice(-7)
       const recentAvg = recent.reduce((acc, e) => acc + e.performance, 0) / recent.length
-      const older = saved.slice(-14, -7)
+      const older = data.slice(-14, -7)
       if (older.length === 7) {
         const olderAvg = older.reduce((acc, e) => acc + e.performance, 0) / older.length
         if (recentAvg > olderAvg) {
@@ -86,7 +68,7 @@ export default function Home() {
       }
     }
 
-    setInsights(newInsights)
+    return newInsights
   }
 
   const handleCheckIn = (data) => {
@@ -97,13 +79,18 @@ export default function Home() {
       timestamp: new Date().toISOString()
     }
 
-    const updatedEntries = [...entries.filter(e => e.date !== today), newEntry]
+    const updatedEntries = sortEntries([...entries.filter(e => e.date !== today), newEntry])
     setEntries(updatedEntries)
-    setTodayEntry(newEntry)
     localStorage.setItem('lifesync-entries', JSON.stringify(updatedEntries))
     setShowCheckIn(false)
-    generateInsights()
   }
+
+  const todayEntry = useMemo(() => {
+    const today = format(new Date(), 'yyyy-MM-dd')
+    return entries.find(e => e.date === today) || null
+  }, [entries])
+
+  const insights = useMemo(() => generateInsights(entries), [entries])
 
   const getChartData = () => {
     return entries.slice(-7).map(entry => ({
@@ -138,8 +125,34 @@ export default function Home() {
 
   return (
     <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+      <nav className="sticky top-0 z-30 mb-6 bg-white/80 backdrop-blur rounded-2xl border border-slate-100 px-4 py-3 flex flex-wrap items-center gap-3 justify-between shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-green-500 text-white">
+            <Activity className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-sm text-gray-500">Navigation</p>
+            <p className="font-semibold text-gray-900">Performance Dashboard</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-sm text-gray-600 flex-wrap">
+          <a className="px-3 py-1 rounded-lg hover:bg-slate-100 transition" href="#overview">Overview</a>
+          <a className="px-3 py-1 rounded-lg hover:bg-slate-100 transition" href="#trends">Trends</a>
+          <a className="px-3 py-1 rounded-lg hover:bg-slate-100 transition" href="#insights">Insights</a>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="h-10 w-px bg-slate-200 hidden sm:block" />
+          <div className="text-right">
+            <p className="text-xs text-gray-500">Current streak</p>
+            <p className="font-semibold text-gray-900">{calculateStreak(entries)} days</p>
+          </div>
+        </div>
+      </nav>
+
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-8" id="overview">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-gradient-to-br from-blue-500 to-green-500 rounded-2xl">
@@ -150,21 +163,28 @@ export default function Home() {
               <p className="text-gray-600">Discover your performance patterns</p>
             </div>
           </div>
-          
-          {!todayEntry && (
-            <button
-              onClick={() => setShowCheckIn(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-green-500 text-white rounded-xl font-semibold hover:shadow-lg transition-shadow"
-            >
-              <Plus className="w-5 h-5" />
-              Daily Check-in
-            </button>
-          )}
+
+          <button
+            onClick={() => setShowCheckIn(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-green-500 text-white rounded-xl font-semibold hover:shadow-lg transition-shadow"
+          >
+            <Plus className="w-5 h-5" />
+            {todayEntry ? 'Update Check-in' : 'Daily Check-in'}
+          </button>
         </div>
-        
+
         {todayEntry && (
-          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
-            <p className="text-green-800 font-medium">✓ Today's check-in complete</p>
+          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl flex flex-wrap gap-4 items-center justify-between">
+            <div>
+              <p className="text-green-800 font-medium">✓ Today&apos;s check-in saved</p>
+              <p className="text-sm text-gray-700">Energy {todayEntry.energy}/10 · Sleep {todayEntry.sleep}h · Stress {todayEntry.stress}/10</p>
+            </div>
+            <button
+              className="text-sm font-semibold text-green-700 hover:text-green-800"
+              onClick={() => setShowCheckIn(true)}
+            >
+              Adjust numbers
+            </button>
           </div>
         )}
       </div>
@@ -173,7 +193,7 @@ export default function Home() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatsCard
           title="Current Streak"
-          value={`${entries.length} days`}
+          value={`${calculateStreak(entries)} days`}
           icon={Calendar}
           trend="+2 this week"
           color="blue"
@@ -203,7 +223,7 @@ export default function Home() {
 
       {/* Insights Section */}
       {insights.length > 0 && (
-        <div className="mb-8">
+        <div className="mb-8" id="insights">
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
             <Brain className="w-5 h-5" />
             AI Insights
@@ -218,7 +238,7 @@ export default function Home() {
 
       {/* Charts */}
       {entries.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8" id="trends">
           <ChartCard title="7-Day Performance Trend">
             <ResponsiveContainer width="100%" height={250}>
               <LineChart data={getChartData()}>
@@ -264,7 +284,11 @@ export default function Home() {
 
       {/* Check-in Modal */}
       {showCheckIn && (
-        <CheckInModal onClose={() => setShowCheckIn(false)} onSubmit={handleCheckIn} />
+        <CheckInModal
+          onClose={() => setShowCheckIn(false)}
+          onSubmit={handleCheckIn}
+          initialData={todayEntry}
+        />
       )}
     </main>
   )
@@ -295,7 +319,7 @@ function StatsCard({ title, value, icon: Icon, trend, color }) {
 
 function InsightCard({ insight }) {
   const Icon = insight.icon
-  
+
   return (
     <div className={`p-4 rounded-xl border ${
       insight.type === 'positive' ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
@@ -325,16 +349,16 @@ function ChartCard({ title, children }) {
   )
 }
 
-function CheckInModal({ onClose, onSubmit }) {
-  const [formData, setFormData] = useState({
-    sleep: 7,
-    performance: 5,
-    energy: 5,
-    stress: 5,
-    nutrition: 5,
-    exercise: false,
-    notes: ''
-  })
+function CheckInModal({ onClose, onSubmit, initialData }) {
+  const [formData, setFormData] = useState(() => ({
+    sleep: initialData?.sleep ?? 7,
+    performance: initialData?.performance ?? 5,
+    energy: initialData?.energy ?? 5,
+    stress: initialData?.stress ?? 5,
+    nutrition: initialData?.nutrition ?? 5,
+    exercise: initialData?.exercise ?? false,
+    notes: initialData?.notes ?? ''
+  }))
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -471,4 +495,34 @@ function SliderInput({ label, value, onChange, min, max, step = 1, unit, icon: I
       </div>
     </div>
   )
+}
+
+function sortEntries(list) {
+  return [...list].sort((a, b) => new Date(a.date) - new Date(b.date))
+}
+
+function calculateStreak(list) {
+  if (list.length === 0) return 0
+
+  const ordered = sortEntries(list)
+  const today = format(new Date(), 'yyyy-MM-dd')
+  let streak = 0
+  let cursor = new Date(today)
+
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    const entryDate = new Date(ordered[i].date)
+    const diffDays = Math.floor((cursor - entryDate) / (1000 * 60 * 60 * 24))
+
+    if (diffDays === 0) {
+      streak += 1
+      cursor.setDate(cursor.getDate() - 1)
+    } else if (diffDays === 1) {
+      streak += 1
+      cursor.setDate(cursor.getDate() - 1)
+    } else if (diffDays > 1) {
+      break
+    }
+  }
+
+  return streak
 }
