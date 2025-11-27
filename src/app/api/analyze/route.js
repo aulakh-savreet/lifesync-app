@@ -177,15 +177,18 @@ function analyzePatterns(entries) {
 // Helper functions
 function calculateCorrelation(x, y) {
   const n = x.length
+  if (n === 0) return 0
   const sumX = x.reduce((a, b) => a + b, 0)
   const sumY = y.reduce((a, b) => a + b, 0)
   const sumXY = x.reduce((total, xi, i) => total + xi * y[i], 0)
   const sumX2 = x.reduce((total, xi) => total + xi * xi, 0)
   const sumY2 = y.reduce((total, yi) => total + yi * yi, 0)
-  
-  const correlation = (n * sumXY - sumX * sumY) / 
-    Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY))
-  
+
+  const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY))
+  if (denominator === 0) return 0
+
+  const correlation = (n * sumXY - sumX * sumY) / denominator
+
   return correlation
 }
 
