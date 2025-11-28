@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 
 import { themes, defaultMetrics as defaultMetricConfigs } from '@/lib/themes'
-import { calculateCorrelation, average, detectPatterns } from '@/lib/utils'
+import { transformDatabaseToUI } from '@/lib/dataTransformer'
 
 import Navbar from '@/components/Navbar'
 import DashboardView from '@/components/DashboardView'
@@ -17,6 +17,9 @@ import CalendarView from '@/components/CalendarView'
 import InsightsView from '@/components/InsightsView'
 import CheckInModal from '@/components/CheckInModal'
 import SettingsModal from '@/components/SettingsModal'
+import DataUploadModal from '@/components/DataUploadModal'
+import AICoach from '@/components/AICoach'
+import AIFloatingButton from '@/components/AIFloatingButton'
 
 // Map icon strings to actual icon components
 const iconMap = {
@@ -30,181 +33,183 @@ const defaultMetrics = defaultMetricConfigs.map(metric => ({
   icon: iconMap[metric.icon] || Zap
 }))
 
+// Helper functions
+function average(arr) {
+  if (!arr || arr.length === 0) return 0
+  return arr.reduce((sum, val) => sum + val, 0) / arr.length
+}
+
+function calculateCorrelation(arr1, arr2) {
+  if (!arr1 || !arr2 || arr1.length !== arr2.length || arr1.length < 2) return 0
+  const avg1 = average(arr1)
+  const avg2 = average(arr2)
+  const numerator = arr1.reduce((sum, val, i) => sum + (val - avg1) * (arr2[i] - avg2), 0)
+  const denom1 = Math.sqrt(arr1.reduce((sum, val) => sum + Math.pow(val - avg1, 2), 0))
+  const denom2 = Math.sqrt(arr2.reduce((sum, val) => sum + Math.pow(val - avg2, 2), 0))
+  if (denom1 === 0 || denom2 === 0) return 0
+  return numerator / (denom1 * denom2)
+}
+
+function detectPatterns(entries) {
+  if (!entries || entries.length < 7) return []
+  const patterns = []
+  
+  const sleepData = entries.map(e => e.sleep || e.sleep_duration_hours || 0)
+  const performanceData = entries.map(e => e.performance || e.performance_score || 0)
+  
+  const sleepPerfCorr = calculateCorrelation(
+    sleepData.slice(0, -1),
+    performanceData.slice(1)
+  )
+  
+  if (sleepPerfCorr > 0.5) {
+    patterns.push({
+      type: 'positive',
+      title: 'Sleep-Performance Link',
+      description: `Better sleep correlates with improved performance (r=${sleepPerfCorr.toFixed(2)})`
+    })
+  }
+  
+  return patterns
+}
+
 export default function Home() {
   const [entries, setEntries] = useState([])
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showDataUpload, setShowDataUpload] = useState(false)
+  const [showAICoach, setShowAICoach] = useState(false)
   const [insights, setInsights] = useState([])
   const [todayEntry, setTodayEntry] = useState(null)
   const [selectedTheme, setSelectedTheme] = useState('default')
   const [metrics, setMetrics] = useState(defaultMetrics)
   const [viewMode, setViewMode] = useState('dashboard')
-  const [selectedDateRange, setSelectedDateRange] = useState('week')
+  const [selectedDateRange, setSelectedDateRange] = useState('month')
   const [userPreferences, setUserPreferences] = useState({
     notifications: true,
     autoAnalysis: true,
     privacyMode: false,
     chartType: 'line',
-    language: 'en',
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    goals: {},
-    tags: [],
-    weatherTracking: false,
-    moodTracking: true,
-    customReminders: []
+    weekStart: 'monday',
+    goals: {
+      sleep: 8,
+      steps: 10000,
+      calories: 2200
+    }
   })
+
+  const theme = themes[selectedTheme]
 
   // Load data on mount
   useEffect(() => {
+    // Load saved entries
     const savedEntries = localStorage.getItem('lifesync-entries')
-    const savedTheme = localStorage.getItem('lifesync-theme')
-    const savedMetrics = localStorage.getItem('lifesync-metrics')
-    const savedPreferences = localStorage.getItem('lifesync-preferences')
-    
     if (savedEntries) {
-      const parsed = JSON.parse(savedEntries)
-      setEntries(parsed)
+      try {
+        const parsed = JSON.parse(savedEntries)
+        // Transform database fields to UI fields
+        const transformed = transformDatabaseToUI(parsed)
+        setEntries(transformed)
+        
+        // Check if today's entry exists
+        const today = format(new Date(), 'yyyy-MM-dd')
+        const todaysEntry = transformed.find(e => e.date === today)
+        setTodayEntry(todaysEntry || null)
+      } catch (e) {
+        console.error('Error loading entries:', e)
+      }
     }
-    if (savedTheme) setSelectedTheme(savedTheme)
+
+    // Load saved theme
+    const savedTheme = localStorage.getItem('lifesync-theme')
+    if (savedTheme && themes[savedTheme]) {
+      setSelectedTheme(savedTheme)
+    }
+
+    // Load saved preferences
+    const savedPrefs = localStorage.getItem('lifesync-preferences')
+    if (savedPrefs) {
+      try {
+        setUserPreferences(JSON.parse(savedPrefs))
+      } catch (e) {
+        console.error('Error loading preferences:', e)
+      }
+    }
+
+    // Load saved metrics
+    const savedMetrics = localStorage.getItem('lifesync-metrics')
     if (savedMetrics) {
-      const parsed = JSON.parse(savedMetrics)
-      // Restore icon components
-      const restored = parsed.map(m => ({
-        ...m,
-        icon: iconMap[m.iconName] || iconMap[m.icon] || Zap
-      }))
-      setMetrics(restored)
+      try {
+        const parsed = JSON.parse(savedMetrics)
+        const withIcons = parsed.map(m => ({
+          ...m,
+          icon: iconMap[m.iconName] || Zap
+        }))
+        setMetrics(withIcons)
+      } catch (e) {
+        console.error('Error loading metrics:', e)
+      }
     }
-    if (savedPreferences) setUserPreferences(JSON.parse(savedPreferences))
-    
-    // Check today's entry
-    const today = format(new Date(), 'yyyy-MM-dd')
-    const saved = JSON.parse(localStorage.getItem('lifesync-entries') || '[]')
-    const todayData = saved.find(e => e.date === today)
-    if (todayData) setTodayEntry(todayData)
   }, [])
 
   // Generate insights when entries change
   useEffect(() => {
-    if (entries.length >= 3) {
-      generateInsights()
+    if (entries.length > 0) {
+      const patterns = detectPatterns(entries)
+      setInsights(patterns)
     }
   }, [entries])
 
-  const generateInsights = () => {
-    if (entries.length < 3) return
-
-    const newInsights = []
+  // Handle data loaded from upload modal
+  const handleDataLoaded = (data) => {
+    // Transform database fields to UI fields
+    const transformed = transformDatabaseToUI(data)
+    setEntries(transformed)
     
-    // Correlation analysis
-    metrics.forEach(metric1 => {
-      metrics.forEach(metric2 => {
-        if (metric1.id !== metric2.id && metric1.type !== 'boolean' && metric2.type !== 'boolean') {
-          const correlation = calculateCorrelation(
-            entries.map(e => e[metric1.id] || 0),
-            entries.map(e => e[metric2.id] || 0)
-          )
-          
-          if (Math.abs(correlation) > 0.6) {
-            newInsights.push({
-              type: correlation > 0 ? 'positive' : 'warning',
-              title: `${metric1.name} ↔ ${metric2.name}`,
-              description: `Strong ${correlation > 0 ? 'positive' : 'negative'} correlation (${(Math.abs(correlation) * 100).toFixed(0)}%)`,
-              icon: Sparkles,
-              metric1: metric1.id,
-              metric2: metric2.id,
-              correlation
-            })
-          }
-        }
-      })
-    })
-
-    // Trend detection
-    if (entries.length >= 7) {
-      metrics.forEach(metric => {
-        if (metric.type !== 'boolean') {
-          const recent = entries.slice(-7)
-          const older = entries.slice(-14, -7)
-          
-          if (older.length === 7) {
-            const recentAvg = average(recent.map(e => e[metric.id] || 0))
-            const olderAvg = average(older.map(e => e[metric.id] || 0))
-            const change = olderAvg > 0 ? ((recentAvg - olderAvg) / olderAvg) * 100 : 0
-            
-            if (Math.abs(change) > 20) {
-              newInsights.push({
-                type: change > 0 ? 'positive' : 'warning',
-                title: `${metric.name} Trend`,
-                description: `${change > 0 ? '↑' : '↓'} ${Math.abs(change).toFixed(0)}% this week`,
-                icon: TrendingUp,
-                metric: metric.id,
-                change
-              })
-            }
-          }
-        }
-      })
-    }
-
-    // Pattern recognition
-    const patterns = detectPatterns(entries, metrics)
-    patterns.forEach(p => {
-      newInsights.push({
-        ...p,
-        icon: iconMap[p.iconName] || Calendar
-      })
-    })
+    // Save raw data to localStorage (keep database format for persistence)
+    localStorage.setItem('lifesync-entries', JSON.stringify(data))
     
-    setInsights(newInsights.slice(0, 6))
+    // Update today's entry
+    const today = format(new Date(), 'yyyy-MM-dd')
+    const todaysEntry = transformed.find(e => e.date === today)
+    setTodayEntry(todaysEntry || null)
+    
+    setShowDataUpload(false)
   }
 
-  const handleCheckIn = (data) => {
+  // Handle check-in
+  const handleCheckIn = (newEntry) => {
     const today = format(new Date(), 'yyyy-MM-dd')
-    const newEntry = {
-      ...data,
-      date: today,
-      timestamp: new Date().toISOString()
+    const entryWithDate = { ...newEntry, date: today }
+    
+    const existingIndex = entries.findIndex(e => e.date === today)
+    let updatedEntries
+    
+    if (existingIndex >= 0) {
+      updatedEntries = [...entries]
+      updatedEntries[existingIndex] = entryWithDate
+    } else {
+      updatedEntries = [...entries, entryWithDate].sort((a, b) => 
+        new Date(a.date) - new Date(b.date)
+      )
     }
-
-    const updatedEntries = [...entries.filter(e => e.date !== today), newEntry]
+    
     setEntries(updatedEntries)
-    setTodayEntry(newEntry)
+    setTodayEntry(entryWithDate)
     localStorage.setItem('lifesync-entries', JSON.stringify(updatedEntries))
     setShowCheckIn(false)
   }
 
-  const getFilteredEntries = () => {
-    let filtered = [...entries]
-    const now = new Date()
-    
-    switch (selectedDateRange) {
-      case 'week':
-        filtered = filtered.filter(e => new Date(e.date) >= subDays(now, 7))
-        break
-      case 'month':
-        filtered = filtered.filter(e => new Date(e.date) >= subDays(now, 30))
-        break
-      case 'quarter':
-        filtered = filtered.filter(e => new Date(e.date) >= subDays(now, 90))
-        break
-      case 'year':
-        filtered = filtered.filter(e => new Date(e.date) >= subDays(now, 365))
-        break
-    }
-    
-    return filtered.sort((a, b) => new Date(a.date) - new Date(b.date))
-  }
-
+  // Export data
   const exportData = () => {
-    const dataStr = JSON.stringify({
+    const data = {
       entries,
-      metrics: metrics.map(m => ({ ...m, iconName: m.icon?.name || 'Zap', icon: undefined })),
+      metrics,
       preferences: userPreferences,
-      theme: selectedTheme
-    }, null, 2)
-    
-    const blob = new Blob([dataStr], { type: 'application/json' })
+      theme: selectedTheme,
+      exportedAt: new Date().toISOString()
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -213,103 +218,150 @@ export default function Home() {
     URL.revokeObjectURL(url)
   }
 
-  const importData = (event) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-    
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const data = JSON.parse(e.target?.result)
-        if (data.entries) {
-          setEntries(data.entries)
-          localStorage.setItem('lifesync-entries', JSON.stringify(data.entries))
-        }
-        if (data.metrics) {
-          const restored = data.metrics.map(m => ({
-            ...m,
-            icon: iconMap[m.iconName] || Zap
-          }))
-          setMetrics(restored)
-          localStorage.setItem('lifesync-metrics', JSON.stringify(data.metrics))
-        }
-        if (data.preferences) {
-          setUserPreferences(data.preferences)
-          localStorage.setItem('lifesync-preferences', JSON.stringify(data.preferences))
-        }
-        if (data.theme) {
-          setSelectedTheme(data.theme)
-          localStorage.setItem('lifesync-theme', data.theme)
-        }
-      } catch (error) {
-        console.error('Import failed:', error)
-      }
+  // Import data
+  const importData = (data) => {
+    if (data.entries) {
+      const transformed = transformDatabaseToUI(data.entries)
+      setEntries(transformed)
+      localStorage.setItem('lifesync-entries', JSON.stringify(data.entries))
     }
-    reader.readAsText(file)
+    if (data.preferences) {
+      setUserPreferences(data.preferences)
+      localStorage.setItem('lifesync-preferences', JSON.stringify(data.preferences))
+    }
+    if (data.theme && themes[data.theme]) {
+      setSelectedTheme(data.theme)
+      localStorage.setItem('lifesync-theme', data.theme)
+    }
   }
 
-  const theme = themes[selectedTheme]
+  // Filter entries based on date range
+  const getFilteredEntries = () => {
+    if (!entries.length) return []
+    
+    const now = new Date()
+    let startDate
+    
+    switch (selectedDateRange) {
+      case 'week':
+        startDate = subDays(now, 7)
+        break
+      case 'month':
+        startDate = subDays(now, 30)
+        break
+      case 'quarter':
+        startDate = subDays(now, 90)
+        break
+      case 'year':
+        startDate = subDays(now, 365)
+        break
+      default:
+        return entries
+    }
+    
+    return entries.filter(e => new Date(e.date) >= startDate)
+  }
+
+  const filteredEntries = getFilteredEntries()
 
   return (
-    <div className={`min-h-screen bg-gradient-to-br ${theme.bgGradient} transition-colors duration-300`}>
-      {/* Fixed Navbar */}
-      <Navbar
+    <div className={`min-h-screen ${theme.background}`}>
+      {/* Navbar */}
+      <Navbar 
         theme={theme}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        todayEntry={todayEntry}
-        onCheckIn={() => setShowCheckIn(true)}
         onSettings={() => setShowSettings(true)}
+        onCheckIn={() => setShowCheckIn(true)}
+        onDataUpload={() => setShowDataUpload(true)}
+        entriesCount={entries.length}
+        todayEntry={todayEntry}
         userPreferences={userPreferences}
       />
 
-      {/* Main Content - Add padding-top to account for fixed navbar */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 md:pt-20 pb-8">
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {/* Date Range Filter */}
+        <div className="flex justify-end mb-6">
+          <div className={`flex gap-1 p-1 rounded-lg ${theme.cardBg} border ${theme.cardBorder}`}>
+            {[
+              { id: 'week', label: '7D' },
+              { id: 'month', label: '30D' },
+              { id: 'quarter', label: '90D' },
+              { id: 'year', label: '1Y' },
+              { id: 'all', label: 'All' }
+            ].map(range => (
+              <button
+                key={range.id}
+                onClick={() => setSelectedDateRange(range.id)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  selectedDateRange === range.id
+                    ? `${theme.accent} text-white`
+                    : `${theme.textSecondary} hover:bg-gray-100`
+                }`}
+              >
+                {range.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Views */}
         {viewMode === 'dashboard' && (
           <DashboardView 
-            entries={getFilteredEntries()}
-            insights={insights}
-            metrics={metrics}
+            entries={filteredEntries}
             theme={theme}
-            preferences={userPreferences}
+            metrics={metrics}
             todayEntry={todayEntry}
+            onCheckIn={() => setShowCheckIn(true)}
+            dateRange={selectedDateRange}
+            insights={insights}
           />
         )}
         
         {viewMode === 'analytics' && (
-          <AnalyticsView
-            entries={getFilteredEntries()}
-            metrics={metrics}
+          <AnalyticsView 
+            entries={filteredEntries}
             theme={theme}
-            preferences={userPreferences}
             dateRange={selectedDateRange}
-            onDateRangeChange={setSelectedDateRange}
           />
         )}
         
         {viewMode === 'calendar' && (
-          <CalendarView
+          <CalendarView 
             entries={entries}
-            metrics={metrics}
             theme={theme}
+            metrics={metrics}
             onDateSelect={(date) => {
-              const entry = entries.find(e => e.date === format(date, 'yyyy-MM-dd'))
-              if (!entry) {
-                setShowCheckIn(true)
-              }
+              // Could open a modal or show details for that date
+              console.log('Selected date:', date)
             }}
           />
         )}
         
         {viewMode === 'insights' && (
-          <InsightsView
-            insights={insights}
-            entries={getFilteredEntries()}
-            metrics={metrics}
+          <InsightsView 
+            entries={filteredEntries}
             theme={theme}
+            insights={insights}
           />
         )}
       </main>
+
+      {/* AI Floating Button */}
+      <AIFloatingButton 
+        onClick={() => setShowAICoach(true)}
+        hasData={entries.length > 0}
+        theme={theme}
+      />
+
+      {/* AI Coach */}
+      <AICoach 
+        entries={entries}
+        theme={theme}
+        isOpen={showAICoach}
+        onClose={() => setShowAICoach(false)}
+      />
 
       {/* Modals */}
       {showCheckIn && (
@@ -348,6 +400,15 @@ export default function Home() {
           }}
           onExport={exportData}
           onImport={importData}
+        />
+      )}
+
+      {/* Data Upload Modal */}
+      {showDataUpload && (
+        <DataUploadModal
+          onClose={() => setShowDataUpload(false)}
+          onDataLoaded={handleDataLoaded}
+          theme={theme}
         />
       )}
     </div>
