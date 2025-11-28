@@ -1,6 +1,6 @@
 'use client'
 
-import { Activity, Plus, Settings, EyeOff } from 'lucide-react'
+import { Activity, Plus, Settings, EyeOff, Database } from 'lucide-react'
 
 export default function Navbar({ 
   theme, 
@@ -9,7 +9,9 @@ export default function Navbar({
   todayEntry, 
   onCheckIn, 
   onSettings,
-  userPreferences 
+  onDataUpload,
+  userPreferences,
+  entriesCount = 0
 }) {
   const navItems = ['dashboard', 'analytics', 'calendar', 'insights']
 
@@ -24,6 +26,9 @@ export default function Navbar({
             </div>
             <div className="hidden sm:block">
               <h1 className={`text-lg font-semibold ${theme.textPrimary}`}>LifeSync</h1>
+              {entriesCount > 0 && (
+                <p className="text-xs text-gray-500">{entriesCount} entries</p>
+              )}
             </div>
           </div>
 
@@ -52,6 +57,15 @@ export default function Navbar({
                 <EyeOff className="w-4 h-4 text-gray-500" />
               </div>
             )}
+
+            {/* Data Upload Button */}
+            <button
+              onClick={onDataUpload}
+              className="p-2.5 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors duration-200"
+              title="Upload Data"
+            >
+              <Database className="w-5 h-5 text-gray-600" />
+            </button>
             
             {/* Quick Add Button */}
             {!todayEntry && (

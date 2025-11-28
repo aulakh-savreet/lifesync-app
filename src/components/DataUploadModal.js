@@ -1,11 +1,12 @@
+'use client'
 
 import { useState, useRef } from 'react'
 import { 
   Upload, Download, Database, Activity, Moon, 
   Utensils, Smartphone, X, Check, AlertCircle,
-  RefreshCw, Trash2, FileJson, Link
+  RefreshCw, Trash2, FileJson
 } from 'lucide-react'
-import { supabase, isSupabaseConfigured, bulkUploadEntries, getAllDailyEntries, clearAllData } from '@/lib/supabase'
+import { isSupabaseConfigured, bulkUploadEntries, getAllDailyEntries, clearAllData } from '@/lib/supabase'
 
 export default function DataUploadModal({ onClose, onDataLoaded, theme }) {
   const [activeTab, setActiveTab] = useState('upload')
